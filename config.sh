@@ -1,5 +1,6 @@
-# DIND subnet (/16 is always used)
-DIND_SUBNET=10.192.0.0
+# DIND subnet (/16 is always used for IPv4 and /64 for IPv6)
+#DIND_SUBNET=10.192.0.0
+DIND_SUBNET=2001:db8::
 
 # Apiserver port
 APISERVER_PORT=${APISERVER_PORT:-8080}
@@ -43,3 +44,11 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 # This may be useful for CI environment where the cluster is never
 # restarted after it's created.
 # SKIP_SNAPSHOT=y
+
+# The Internet Protocol (IP) version to use for DIND networking.
+# Supports ipv4 (default) and ipv6.
+PROTOCOL="${PROTOCOL:-ipv6}"
+
+# Used for specifying the IPv6 CIDR for DIND networking when PROTOCOL=ipv6.
+# Defaults to 2001:db8::/64.
+# DIND_IPV6_CIDR="${DIND_IPV6_CIDR:-2001:db8::/64}"

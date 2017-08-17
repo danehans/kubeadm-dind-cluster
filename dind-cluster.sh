@@ -46,10 +46,10 @@ if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
   source "${DIND_ROOT}/config.sh"
 fi
 
+PROTOCOL="${PROTOCOL:-ipv4}"
 CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 DIND_SUBNET="${DIND_SUBNET:-10.192.0.0}"
 POD_NETWORK_CIDR="${POD_NETWORK_CIDR:-10.244.0.0/16}"
-dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
 DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
@@ -63,6 +63,10 @@ E2E_REPORT_DIR="${E2E_REPORT_DIR:-}"
 
 if [[ ! ${LOCAL_KUBECTL_VERSION:-} && ${DIND_IMAGE:-} =~ :(v[0-9]+\.[0-9]+)$ ]]; then
   LOCAL_KUBECTL_VERSION="${BASH_REMATCH[1]}"
+fi
+
+if [[ ${PROTOCOL} = ipv4 ]]; then
+  dind_ip_base="$(echo "${DIND_SUBNET}" | sed 's/\.0$//')"
 fi
 
 function dind::need-source {
@@ -359,7 +363,11 @@ function dind::ensure-binaries {
 
 function dind::ensure-network {
   if ! docker network inspect kubeadm-dind-net >&/dev/null; then
-    docker network create --subnet="${DIND_SUBNET}/16" kubeadm-dind-net >/dev/null
+    if [[ ${PROTOCOL} = ipv6 ]]; then
+      docker network create --subnet="${DIND_SUBNET}/64" --ipv6 kubeadm-dind-net >/dev/null
+    else
+      docker network create --subnet="${DIND_SUBNET}/16" kubeadm-dind-net >/dev/null
+    fi
   fi
 }
 
@@ -527,12 +535,20 @@ function dind::deploy-dashboard {
 function dind::init {
   local -a opts
   dind::set-master-opts
-  local master_ip="${dind_ip_base}.2"
+  if [[ ${PROTOCOL} = ipv6 ]]; then
+    local master_ip="${DIND_SUBNET}2"
+  else
+    local master_ip="${dind_ip_base}.2"
+  fi
   local container_id=$(dind::run kube-master "${master_ip}" 1 127.0.0.1:${APISERVER_PORT}:8080 ${master_opts[@]+"${master_opts[@]}"})
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  if [[ ${PROTOCOL} = ipv6 ]]; then
+    kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --apiserver-advertise-address=${master_ip} --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  else
+    kubeadm_join_flags="$(dind::kubeadm "${container_id}" init --pod-network-cidr="${POD_NETWORK_CIDR}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+  fi
   dind::configure-kubectl
   dind::deploy-dashboard
 }
@@ -547,7 +563,11 @@ function dind::create-node-container {
   # kube-node-1 hostname, if there are two nodes, we should pick
   # kube-node-2 and so on
   local next_node_index=${1:-$(docker ps -q --filter=label=mirantis.kubeadm_dind_cluster | wc -l | sed 's/^ *//g')}
-  local node_ip="${dind_ip_base}.$((next_node_index + 2))"
+  if [[ ${PROTOCOL} = ipv6 ]]; then
+    local node_ip="${DIND_SUBNET}$((next_node_index + 2))"
+  else
+    local node_ip="${dind_ip_base}.$((next_node_index + 2))"
+  fi
   local -a opts
   if [[ ${BUILD_KUBEADM} || ${BUILD_HYPERKUBE} ]]; then
     opts+=(-v dind-k8s-binaries:/k8s)
@@ -754,7 +774,11 @@ function dind::restore_container {
 }
 
 function dind::restore {
-  local master_ip="${dind_ip_base}.2"
+  if [[ ${PROTOCOL} = ipv6 ]]; then
+    local master_ip="${DIND_SUBNET}2"
+  else
+    local master_ip="${dind_ip_base}.2"
+  fi
   dind::down
   dind::step "Restoring master container"
   dind::set-master-opts
