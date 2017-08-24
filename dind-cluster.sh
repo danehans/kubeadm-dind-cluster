@@ -443,6 +443,7 @@ function dind::run {
   docker run \
          -d --privileged \
          --net kubeadm-dind-net \
+         --dns=8.8.8.8 \
          --name "${container_name}" \
          --hostname "${container_name}" \
          -l mirantis.kubeadm_dind_cluster \

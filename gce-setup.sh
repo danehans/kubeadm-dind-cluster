@@ -46,5 +46,5 @@ docker-machine ssh ${KUBE_DIND_VM} \
                -L ${KUBE_RSYNC_PORT}:localhost:${KUBE_RSYNC_PORT} \
                -L ${APISERVER_PORT}:localhost:${APISERVER_PORT} \
                -N&
-time "${DIND_ROOT}"/dind-cluster.sh up
+#time "${DIND_ROOT}"/dind-cluster.sh up
 set +x

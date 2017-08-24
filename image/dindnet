@@ -80,19 +80,3 @@ EOF
 if [[ "${CNI_BRIDGE_NETWORK_OFFSET:-}" ]]; then
    dind::setup-bridge
 fi
-
-# make docker's kube-dns friendly
-old_ns="$(awk '/^nameserver/ {print $2; exit}' /etc/resolv.conf)"
-if [[ ${old_ns} ]]; then
-  # sed -i doesn't work here because of docker's handling of /etc/resolv.conf
-  sed "s/^nameserver.*/nameserver ${IP}/" /etc/resolv.conf >/etc/resolv.conf.updated
-  cat /etc/resolv.conf.updated >/etc/resolv.conf
-  # rm /tmp/resolv.conf.updated
-  while true; do
-    socat udp4-recvfrom:53,reuseaddr,fork,bind=${IP} UDP:${old_ns}:53 || true
-    echo "WARNING: restarting socat" >&2
-  done
-else
-  echo "WARNING: couldn't get nameserver" >&2
-  exit 1  
-fi
