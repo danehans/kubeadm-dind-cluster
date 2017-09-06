@@ -47,3 +47,7 @@ CNI_PLUGIN="${CNI_PLUGIN:-bridge}"
 # Disable parallel running of e2e tests. Use this if you use a resource
 # constrained machine for e2e tests and get some flakes.
 # DIND_NO_PARALLEL_E2E=y
+
+# Set IP_MODE to "dualstack" to deploy Kubernetes using IPv4 and IPv6 addresses
+# or to "ipv6" for an IPv6-only Kubernetes deployment. Defaults to ipv4
+# IP_MODE="${IP_MODE:-ipv6}"

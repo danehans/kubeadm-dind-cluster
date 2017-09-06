@@ -13,11 +13,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+
 if [ $(uname) = Darwin ]; then
   readlinkf(){ perl -MCwd -e 'print Cwd::abs_path shift' "$1";}
 else
   readlinkf(){ readlink -f "$1"; }
 fi
+
 DIND_ROOT="$(cd $(dirname "$(readlinkf "${BASH_SOURCE}")"); pwd)"
 KUBE_DIND_GCE_PROJECT="${KUBE_DIND_GCE_PROJECT:-$(gcloud config list --format 'value(core.project)' 2>/dev/null)}"
 KUBE_DIND_GCE_ZONE="${KUBE_DIND_GCE_ZONE:-$(gcloud config list --format 'value(compute.zone)' 2>/dev/null)}"
@@ -27,10 +33,16 @@ if [ -z "${KUBE_DIND_GCE_PROJECT:-}" ]; then
     return 1
 fi
 
+if [[ ! ${EMBEDDED_CONFIG:-} ]]; then
+  source "${DIND_ROOT}/config.sh"
+fi
+
 set -x
+IP_MODE="${IP_MODE:-ipv4}"
 KUBE_DIND_VM="${KUBE_DIND_VM:-k8s-dind}"
 export KUBE_RSYNC_PORT=8730
 export APISERVER_PORT=8899
+
 docker-machine create \
                --driver=google \
                --google-project=${KUBE_DIND_GCE_PROJECT} \
@@ -41,10 +53,18 @@ docker-machine create \
                --google-disk-type=pd-ssd \
                --engine-storage-driver=overlay2 \
                ${KUBE_DIND_VM}
+
 eval $(docker-machine env ${KUBE_DIND_VM})
+
 docker-machine ssh ${KUBE_DIND_VM} \
                -L ${KUBE_RSYNC_PORT}:localhost:${KUBE_RSYNC_PORT} \
                -L ${APISERVER_PORT}:localhost:${APISERVER_PORT} \
                -N&
+
+if [[ ${IP_MODE} = "ipv6" || ${IP_MODE} = "dualstack" ]]; then
+	docker-machine scp ${DIND_ROOT}/jool-setup.sh ${KUBE_DIND_VM}:jool-setup.sh
+	docker-machine ssh ${KUBE_DIND_VM} . jool-setup.sh
+fi
+
 time "${DIND_ROOT}"/dind-cluster.sh up
 set +x
