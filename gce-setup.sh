@@ -31,20 +31,27 @@ set -x
 KUBE_DIND_VM="${KUBE_DIND_VM:-k8s-dind}"
 export KUBE_RSYNC_PORT=8730
 export APISERVER_PORT=8899
+gcloud compute instances create ${KUBE_DIND_VM} \
+               --image-project ubuntu-os-cloud \
+               --image ubuntu-1604-xenial-v20170307 \
+               --zone ${KUBE_DIND_GCE_ZONE} \
+               --machine-type n1-standard-8 \
+               --boot-disk-size 50 \
+               --boot-disk-type pd-ssd \
+               --can-ip-forward \
+               --network-interface aliases=/28
 docker-machine create \
                --driver=google \
                --google-project=${KUBE_DIND_GCE_PROJECT} \
-               --google-machine-image=ubuntu-os-cloud/global/images/ubuntu-1604-xenial-v20170307 \
                --google-zone=${KUBE_DIND_GCE_ZONE} \
-               --google-machine-type=n1-standard-8 \
-               --google-disk-size=50 \
-               --google-disk-type=pd-ssd \
                --engine-storage-driver=overlay2 \
+               --google-use-existing \
                ${KUBE_DIND_VM}
 eval $(docker-machine env ${KUBE_DIND_VM})
 docker-machine ssh ${KUBE_DIND_VM} \
                -L ${KUBE_RSYNC_PORT}:localhost:${KUBE_RSYNC_PORT} \
                -L ${APISERVER_PORT}:localhost:${APISERVER_PORT} \
                -N&
+# To get gce alias cidr: GCE_NETWORK_CIDR=$(gcloud compute instances describe ${KUBE_DIND_VM} | grep ipCidrRange | awk '{print $3}')
 time "${DIND_ROOT}"/dind-cluster.sh up
 set +x
