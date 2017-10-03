@@ -533,15 +533,6 @@ function dind::deploy-dashboard {
   fi
 }
 
-function dind::at-least-kubeadm-1-8 {
-  # kubeadm 1.6 and below doesn't support 'version -o short' and will
-  # thus produce an empty string
-  local ver="$(docker exec kube-master kubeadm version -o short 2>/dev/null|sed 's/[^0-9]*\.[0-9]*$//')"
-  if [[ ! ${ver} || ${ver} = v1.7 ]]; then
-    return 1
-  fi
-}
-
 function dind::init {
   local -a opts
   dind::set-master-opts
@@ -551,26 +542,32 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  if dind::at-least-kubeadm-1-8; then
-    # We must create config file here because unifiedContolPlaneImage can't be set via
-    # a command line flag.
-    # insecure-bind-address and insecure-bind-port are also overridden by patching
-    # apiserver static pod, but someday when k-d-c will only support
-    # kubeadm 1.8+ we'll be able to remove that patching
-    docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
+  #
+  # We must create config file here because unifiedContolPlaneImage can't be set via
+  # a command line flag.
+  # insecure-bind-address and insecure-bind-port are also overridden by patching
+  # apiserver static pod, but someday when k-d-c will only support
+  # kubeadm 1.8+ we'll be able to remove that patching
+  docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
 apiVersion: kubeadm.k8s.io/v1alpha1
 kind: MasterConfiguration
 unifiedControlPlaneImage: mirantis/hypokube:final
 networking:
   podSubnet: "${POD_NETWORK_CIDR}"
 apiServerExtraArgs:
+  etcd-servers: "http://kube-master:2379"
   insecure-bind-address: "0.0.0.0"
   insecure-port: "8080"
+controllerManagerExtraArgs:
+  address: "${master_ip}"
+schedulerExtraArgs:
+  address: "${master_ip}"
+etcd:
+  extraArgs:
+    listen-client-urls: "http://kube-master:2379"
 EOF
-    init_args=(--config /etc/kubeadm.conf)
-  else
-    init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
-  fi
+  init_args=(--config /etc/kubeadm.conf)
+
   kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
   dind::configure-kubectl
   dind::deploy-dashboard
