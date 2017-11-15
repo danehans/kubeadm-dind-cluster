@@ -12,7 +12,7 @@ APISERVER_PORT=${APISERVER_PORT:-8080}
 # Number of nodes. 0 nodes means just one master node.
 # In case of NUM_NODES=0 'node-role.kubernetes.io/master' taint is removed
 # from the master node.
-NUM_NODES=${NUM_NODES:-2}
+NUM_NODES=${NUM_NODES:-1}
 
 # Use non-dockerized build
 # KUBEADM_DIND_LOCAL=

@@ -96,6 +96,7 @@ DIND_IMAGE="${DIND_IMAGE:-}"
 BUILD_KUBEADM="${BUILD_KUBEADM:-}"
 BUILD_HYPERKUBE="${BUILD_HYPERKUBE:-}"
 APISERVER_PORT=${APISERVER_PORT:-8080}
+EXTRA_PORTS="${EXTRA_PORTS:-127.0.0.1:32000:32000}"
 NUM_NODES=${NUM_NODES:-2}
 LOCAL_KUBECTL_VERSION=${LOCAL_KUBECTL_VERSION:-}
 KUBECTL_DIR="${KUBECTL_DIR:-${HOME}/.kubeadm-dind-cluster}"
@@ -537,7 +538,10 @@ function dind::run {
   docker rm -vf "${container_name}" >&/dev/null || true
 
   if [[ "$portforward" ]]; then
-    opts+=(-p "$portforward")
+    IFS=';' read -ra array <<< "$portforward"
+    for element in "${array[@]}"; do
+      opts+=(-p "$element")
+    done
   fi
 
   if [[ ${CNI_PLUGIN} = bridge && ${netshift} ]]; then
@@ -688,22 +692,22 @@ function dind::init {
   # FIXME: I tried using custom tokens with 'kubeadm ex token create' but join failed with:
   # 'failed to parse response as JWS object [square/go-jose: compact JWS format must have three parts]'
   # So we just pick the line from 'kubeadm init' output
-  if dind::at-least-kubeadm-1-8; then
-    # We must create config file here because unifiedContolPlaneImage can't be set via
-    # a command line flag.
-    # insecure-bind-address and insecure-bind-port are also overridden by patching
-    # apiserver static pod, but someday when k-d-c will only support
-    # kubeadm 1.8+ we'll be able to remove that patching
-    local pod_net_cidr=""
-    # TODO: May want to specify each of the plugins that require --pod-network-cidr
-    if [[ ${CNI_PLUGIN} != "bridge" ]]; then
-      pod_net_cidr="podSubnet: \"${POD_NETWORK_CIDR}\""$'\n'"  "
-    fi
-    local bind_address="0.0.0.0"
-    if [[ ${IP_MODE} = "ipv6" ]]; then
-	bind_address="::"
-    fi
-    docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
+  #if dind::at-least-kubeadm-1-8; then
+  # We must create config file here because unifiedContolPlaneImage can't be set via
+  # a command line flag.
+  # insecure-bind-address and insecure-bind-port are also overridden by patching
+  # apiserver static pod, but someday when k-d-c will only support
+  # kubeadm 1.8+ we'll be able to remove that patching
+  local pod_net_cidr=""
+  # TODO: May want to specify each of the plugins that require --pod-network-cidr
+  if [[ ${CNI_PLUGIN} != "bridge" ]]; then
+    pod_net_cidr="podSubnet: \"${POD_NETWORK_CIDR}\""$'\n'"  "
+  fi
+  local bind_address="0.0.0.0"
+  if [[ ${IP_MODE} = "ipv6" ]]; then
+	  bind_address="::"
+  fi
+  docker exec -i kube-master /bin/sh -c "cat >/etc/kubeadm.conf" <<EOF
 apiVersion: kubeadm.k8s.io/v1alpha1
 unifiedControlPlaneImage: mirantis/hypokube:final
 kind: MasterConfiguration
@@ -716,15 +720,16 @@ networking:
 tokenTTL: 0s
 nodeName: kube-master
 apiServerExtraArgs:
+  runtime-config: "admissionregistration.k8s.io/v1alpha1"
   insecure-bind-address: "${bind_address}"
   insecure-port: "8080"
 EOF
-    init_args=(--config /etc/kubeadm.conf)
-  else
-    init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
-  fi
-  kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
-  dind::configure-kubectl
+  init_args=(--config /etc/kubeadm.conf)
+  #else
+  #  init_args=(--pod-network-cidr="${POD_NETWORK_CIDR}")
+  #fi
+kubeadm_join_flags="$(dind::kubeadm "${container_id}" init "${init_args[@]}" --skip-preflight-checks "$@" | grep '^ *kubeadm join' | sed 's/^ *kubeadm join //')"
+dind::configure-kubectl
 }
 
 function dind::create-node-container {
@@ -748,7 +753,7 @@ function dind::create-node-container {
       opts+=(-e HYPERKUBE_SOURCE=build://)
     fi
   fi
-  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) "" ${opts[@]+"${opts[@]}"}
+  dind::run ${reuse_volume} kube-node-${next_node_index} ${node_ip} $((next_node_index + 1)) ${EXTRA_PORTS} ${opts[@]+"${opts[@]}"}
 }
 
 function dind::join {
